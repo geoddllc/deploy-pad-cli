@@ -1,10 +1,14 @@
 {
-  "name": "geodd",
+  "name": "@geodd/cli",
   "version": "0.1.0",
   "description": "Geodd command-line tools for people and AI agents",
-  "private": true,
-  "license": "UNLICENSED",
+  "private": false,
+  "license": "MIT",
   "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "engines": { "node": ">=22" },
   "bin": { "geodd": "dist/cli.js" },
   "files": ["dist/**/*.js", "dist/assets/*"],

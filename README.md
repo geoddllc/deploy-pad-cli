@@ -2,7 +2,7 @@
 
 A command-line client for people and AI agents to discover Geodd models and prices, authenticate with Google, and manage API keys. This is a CLI, not an SDK.
 
-Requires **Node.js 22 or newer** and npm. The current npm package and executable are both named `geodd`. Publishing is intentionally blocked with `"private": true` until npm ownership and licensing are confirmed.
+Requires **Node.js 22 or newer** and npm. The npm package is `@geodd/cli`; the executable is `geodd`.
 
 ## Build From Source
 
@@ -252,21 +252,18 @@ Create and test the npm tarball without publishing:
 
 ```sh
 npm pack
-npm exec --package ./geodd-0.1.0.tgz -- geodd --help
-npm exec --package ./geodd-0.1.0.tgz -- geodd models list --json
+npm exec --package ./geodd-cli-0.1.0.tgz -- geodd --help
+npm exec --package ./geodd-cli-0.1.0.tgz -- geodd models list --json
 ```
 
-`npm pack` rebuilds automatically. The package includes compiled JavaScript, browser assets, package metadata, and this README, not `.env`, session files, tests, or Kilo metadata. The public models command is the only production smoke test intended here.
+`npm pack` rebuilds automatically. The package includes compiled JavaScript, browser assets, package metadata, this README, and the MIT license, not `.env`, session files, tests, or Kilo metadata. The public models command is the only production smoke test intended here.
 
 ## Release Status
 
 Builds and automated tests have been validated on macOS with Node 22 and Node 24. Mocked browser flows have also been checked in desktop and mobile Chrome. Linux and Windows runtime acceptance remains outstanding.
 
-Before publishing:
-
-1. Confirm npm package ownership and the project's license. `private: true` currently blocks publishing; `UNLICENSED` records that no distribution license has been confirmed.
-2. Supply the real public Google Web Client ID and authorize the exact localhost origins, matching backend audience configuration.
-3. Run real login, signup, 2FA, and key acceptance checks against explicitly designated staging accounts. Mocks do not establish deployed Google configuration or mutation payload compatibility.
-4. Validate secure Windows ACL storage before enabling or advertising Windows file persistence.
-
 Publishing, production account/key mutations, billing changes, and Google/backend deployment configuration changes are separate release operations, not part of routine builds or tests.
+
+## License
+
+[MIT](LICENSE). Copyright (c) 2026 Geodd.
