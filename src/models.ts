@@ -76,6 +76,23 @@ export async function modelsList(http: HttpClient): Promise<CommandResult> {
   return { data: models, text: models.length ? rows.map(row => row.map((cell, index) => safeText(cell).padEnd(widths[index]!)).join('  ').trimEnd()).join('\n') : 'No models available.' };
 }
 
+export async function modelsForKeys(http: HttpClient, token: string): Promise<CommandResult> {
+  const response = await http.request('/console/models', { method: 'GET', token, context: 'keys' });
+  const malformed = new CliError('MALFORMED_KEY_MODELS', 'The service returned an invalid key model catalog. Expected a models array containing 24-character hexadecimal console model IDs.');
+  if (!isRecord(response) || response.success !== true || !isRecord(response.data) || !Array.isArray(response.data.models)) throw malformed;
+  const models = response.data.models.map(model => {
+    if (!isRecord(model) || typeof model._id !== 'string' || model._id.length !== 24 || !/^[a-f0-9]{24}$/i.test(model._id)) throw malformed;
+    return { id: model._id.toLowerCase(), name: typeof model.name === 'string' ? model.name : null };
+  });
+  return {
+    data: models,
+    text: models.length ? [
+      `${'ID'.padEnd(24)}  NAME`,
+      ...models.map(model => `${model.id}  ${safeText(model.name ?? 'unknown')}`.trimEnd()),
+    ].join('\n') : 'No models available for API keys.',
+  };
+}
+
 export async function modelsShow(http: HttpClient, id: string): Promise<CommandResult> {
   const model = select(await catalog(http), id);
   return { data: model, text: JSON.stringify(model, null, 2) };

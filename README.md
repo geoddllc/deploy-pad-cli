@@ -86,6 +86,50 @@ node dist/cli.js models pricing openai/gpt-oss-120b
 
 Model IDs are exact and case-sensitive. All catalog models are retained, with unavailable models and unknown prices identified rather than silently omitted. Pricing preserves modality, type, unit, and original decimal strings; per-token prices also receive exact USD-per-million conversions.
 
+### Model IDs for Keys
+
+The commands above use **public inference IDs**, such as `openai/gpt-oss-120b`. Key creation and model-set updates use a different identifier: the model document's 24-character hexadecimal MongoDB ID. After authenticating with `auth login` or supplying an origin-bound session, discover those IDs with a read-only command:
+
+```sh
+node dist/cli.js models list --for-keys
+node dist/cli.js models list --for-keys --json
+```
+
+This calls `GET /console/models` with the selected origin-bound session, without a body or selected-key filter. It lists every returned model in backend order and exposes only `id` and `name`. Use that `id` with key commands. The CLI does not guess a mapping from public inference names or IDs.
+
+Example JSON response from `https://api.geodd.io`, shortened to three entries from a confirmed response:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "6a46324b5f8f2743b7db27c2",
+      "name": "GLM 5.2"
+    },
+    {
+      "id": "6a0c61a2440517768d5b51fa",
+      "name": "DeepSeek V4 Flash"
+    },
+    {
+      "id": "6a0339638bcea1adc9ba6194",
+      "name": "openai/gpt-oss-120b"
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `success` | Whether the CLI command completed successfully |
+| `data` | Console model entries; the actual response can contain more entries than this excerpt |
+| `data[].id` | The model database ID to pass to `keys create --model` or `keys update --model` |
+| `data[].name` | The model's display name, or `null` if no name is available |
+
+Even when `name` looks like an inference ID, as it does for `openai/gpt-oss-120b`, pass the **`id` field** to key commands. In this example, that is `6a0339638bcea1adc9ba6194`. These are model identifiers, not API key secrets or existing key IDs.
+
+The catalog is live, not a fixed list maintained by the CLI. Fetch it for the same API origin you will use for key management; do not assume these example IDs are permanent or shared between production and staging.
+
 ## Sessions and Automation
 
 Console requests use a Geodd session JWT in the `secret_token` header, without a Bearer prefix. Google ID tokens and inference API keys are not console sessions.
@@ -127,28 +171,36 @@ Stored sessions are **plaintext credentials**, isolated by canonical API origin.
 
 Key mutations prompt in an interactive terminal. Automation must supply `--yes`; no mutation request is sent without approval. Existing-key commands require a **key ID**, not a secret. Key listing and secret-to-ID lookup are not supported.
 
-The following examples mutate account resources. Use a designated staging account for acceptance testing, with an origin-bound session configured first:
+First run `models list --for-keys` and identify the model you want. The following commands mutate account resources. For acceptance testing, use a designated staging account and IDs fetched from that staging origin.
+
+For the production catalog excerpt above, the create command for `openai/gpt-oss-120b` uses its returned database ID:
 
 ```sh
 node dist/cli.js keys create \
-  --name staging-agent \
-  --model openai/gpt-oss-120b \
-  --monthly-volume 1000000 \
+  --name my-agent-key \
+  --model 6a0339638bcea1adc9ba6194 \
   --yes --json
-
-node dist/cli.js keys update <key-id> --model openai/gpt-oss-120b --yes
-node dist/cli.js keys rotate <key-id> --yes
-node dist/cli.js keys delete <key-id> --yes
 ```
 
-Replace `<key-id>` with the actual returned ID before running an existing-key command. Repeat `--model` to supply multiple models.
+Confirm the ID is still in your selected origin's catalog and choose a globally unique name before running this example. Save the returned one-time secret securely; do not paste it into documentation, issues, or agent prompts. `--monthly-volume` is optional and is intentionally omitted here.
+
+For existing keys, replace `KEY_ID_FROM_CREATE_RESPONSE` with the key's returned ID and `MODEL_ID_FROM_CONSOLE_CATALOG` with a model ID from `models list --for-keys`:
+
+```sh
+node dist/cli.js keys update KEY_ID_FROM_CREATE_RESPONSE --model MODEL_ID_FROM_CONSOLE_CATALOG --yes
+node dist/cli.js keys rotate KEY_ID_FROM_CREATE_RESPONSE --yes
+node dist/cli.js keys delete KEY_ID_FROM_CREATE_RESPONSE --yes
+```
+
+Repeat `--model` to supply multiple console model IDs. Hexadecimal IDs are normalized to lowercase and deduplicated before sending. A public inference ID is rejected locally, before credential lookup or any API request. Well-formed IDs are still checked for existence by the backend; a 24-character value is not proof that a model exists.
 
 - Names are globally unique and limited to 1-32 ASCII letters, numbers, or dashes.
-- Creation uses the backend's **PostPaid** billing default. Omitted monthly volume uses the backend's **3,000,000,000-token** default.
+- Creation uses the backend's **PostPaid** billing default. `--monthly-volume` is optional; omitting it uses the backend's **3,000,000,000-token** default. The CLI does not enforce a spending cap.
 - Update **replaces** the entire attached model set; it does not append models.
 - Rotation invalidates the previous secret. Deletion removes the key and its backend mapping.
 - Successful create/rotate output contains a **one-time secret**. Store stdout securely; the CLI never retains the secret in a file.
 - Mutations are never automatically retried. Timeouts and output failures can leave uncertain or recovery-needed outcomes; do not blindly repeat creation or rotation.
+- Known backend validation messages, including invalid/nonexistent model IDs and duplicate key names, are reported safely. Unknown error bodies, credentials, and other users' existing key IDs are not printed.
 
 ## Output and Configuration
 

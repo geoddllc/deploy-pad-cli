@@ -104,14 +104,18 @@ test('serves packaged assets with restrictive GIS-compatible headers and authent
     const asset = await local(h.port, path);
     assert.equal(asset.status, 200);
     assert.equal(asset.headers['cache-control'], 'no-store, max-age=0');
-    assert.equal(asset.headers['referrer-policy'], 'no-referrer');
+    assert.equal(asset.headers['referrer-policy'], 'strict-origin-when-cross-origin');
     assert.equal(asset.headers['cross-origin-opener-policy'], 'same-origin-allow-popups');
     assert.equal(asset.headers['x-frame-options'], 'DENY');
     assert.equal(asset.headers['x-content-type-options'], 'nosniff');
     assert.equal(asset.headers['access-control-allow-origin'], undefined);
     assert.match(String(asset.headers['content-security-policy']), /frame-ancestors 'none'/);
     assert.match(String(asset.headers['content-security-policy']), /https:\/\/accounts.google.com\/gsi\/client/);
-    assert.doesNotMatch(String(asset.headers['content-security-policy']), /unsafe-inline|unsafe-eval/);
+    const policy = String(asset.headers['content-security-policy']);
+    assert.doesNotMatch(policy.match(/(?:^|;\s*)script-src [^;]+/)![0], /unsafe-inline|unsafe-eval|nonce-/);
+    assert.doesNotMatch(policy.match(/(?:^|;\s*)style-src [^;]+/)![0], /unsafe-inline/);
+    assert.match(policy, /style-src-attr 'unsafe-inline'/);
+    assert.match(policy, /font-src https:\/\/fonts.gstatic.com/);
     for (const value of [h.nonce, full.token, twoFactor.tempToken, clientId]) assert(!asset.text.includes(value));
   }
   const config = await h.post('config');
@@ -129,6 +133,25 @@ test('serves packaged assets with restrictive GIS-compatible headers and authent
   assert.deepEqual(h.calls[0]!.body, { credential: 'synthetic-google-credential' });
   assert.equal(h.calls[0]!.headers.has('secret_token'), false);
   assert(!h.warnings.join('').includes(full.token));
+});
+
+test('GIS stylesheet nonce is per-flow, propagated by HTML, and cannot authorize authentication requests', async t => {
+  const first = await start(t);
+  const second = await start(t);
+  const nonces: string[] = [];
+  for (const h of [first, second]) {
+    const html = await local(h.port, '/');
+    const styleNonce = html.text.match(/<script src="\/auth.js" nonce="([A-Za-z0-9+/=]+)" defer>/)?.[1];
+    assert.ok(styleNonce);
+    assert.match(styleNonce, /^[A-Za-z0-9+/]{22}==$/);
+    assert.ok(String(html.headers['content-security-policy']).includes(`'nonce-${styleNonce}'`));
+    assert.doesNotMatch(html.text, /__GEODD_STYLE_NONCE__/);
+    assert.notEqual(styleNonce, h.nonce);
+    assert.equal((await h.post('google', { nonce: styleNonce, credential: 'synthetic-google' })).status, 403);
+    assert.equal(h.calls.length, 0);
+    nonces.push(styleNonce);
+  }
+  assert.notEqual(nonces[0], nonces[1]);
 });
 
 test('signup requires separate explicit boolean consents and never forwards enterprise fields', async t => {

@@ -18,23 +18,17 @@ interface BrowserOptions {
 }
 
 const maxBody = 16 * 1024;
-const headers = {
+const baseHeaders = {
   'cache-control': 'no-store, max-age=0',
   pragma: 'no-cache',
-  'content-security-policy': "default-src 'none'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; frame-src https://accounts.google.com/gsi/; connect-src 'self' https://accounts.google.com/gsi/; img-src 'self' data: https://*.googleusercontent.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'",
+  'content-security-policy': "default-src 'none'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style https://fonts.googleapis.com; style-src-attr 'unsafe-inline'; font-src https://fonts.gstatic.com; frame-src https://accounts.google.com/gsi/; connect-src 'self' https://accounts.google.com/gsi/; img-src 'self' data: https://*.googleusercontent.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'",
   'cross-origin-opener-policy': 'same-origin-allow-popups',
   'cross-origin-resource-policy': 'same-origin',
-  'referrer-policy': 'no-referrer',
+  'referrer-policy': 'strict-origin-when-cross-origin',
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
   'permissions-policy': 'camera=(), microphone=(), geolocation=()',
 };
-
-function json(res: ServerResponse, status: number, data: unknown): void {
-  if (res.destroyed || res.writableEnded) return;
-  res.writeHead(status, { ...headers, 'content-type': 'application/json; charset=utf-8' });
-  res.end(JSON.stringify(data));
-}
 
 function protocolError(): CliError {
   return new CliError('MALFORMED_AUTH_RESPONSE', 'The service returned an inconsistent authentication response. Start a fresh login or contact support.');
@@ -103,11 +97,23 @@ export async function browserAuth(ctx: Context, options: BrowserOptions): Promis
     if (duration !== undefined && (!Number.isFinite(duration) || duration <= 0)) throw new CliError('INVALID_LIFETIME', 'Authentication lifetime must be positive and finite.', 2);
   }
   if (ctx.signal.aborted) throw interrupted();
+  // GIS propagates its script nonce to its stylesheet; its sizing uses style attributes.
+  // This is separate from the authentication state and never authorizes inline scripts.
+  const styleNonce = randomBytes(16).toString('base64');
+  const headers = { ...baseHeaders, 'content-security-policy': baseHeaders['content-security-policy'].replace("style-src 'self'", `style-src 'self' 'nonce-${styleNonce}'`) };
+  function json(res: ServerResponse, status: number, data: unknown): void {
+    if (res.destroyed || res.writableEnded) return;
+    res.writeHead(status, { ...headers, 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(data));
+  }
   let assets: Map<string, { type: string; body: Buffer }>;
   try {
     assets = new Map(await Promise.all([
       ['/', 'index.html', 'text/html'], ['/auth.js', 'auth.js', 'text/javascript'], ['/auth.css', 'auth.css', 'text/css'],
-    ].map(async ([path, file, type]) => [path!, { type: `${type}; charset=utf-8`, body: await readFile(new URL(`./assets/${file}`, import.meta.url)) }] as const)));
+    ].map(async ([path, file, type]) => {
+      const body = await readFile(new URL(`./assets/${file}`, import.meta.url));
+      return [path!, { type: `${type}; charset=utf-8`, body: file === 'index.html' ? Buffer.from(body.toString('utf8').replace('__GEODD_STYLE_NONCE__', styleNonce)) : body }] as const;
+    })));
   } catch { throw new CliError('BROWSER_ASSETS_MISSING', 'Browser authentication assets are missing. Reinstall the CLI package.'); }
   const host = `localhost:${options.port}`;
   const origin = `http://${host}`;

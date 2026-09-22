@@ -1,5 +1,13 @@
 (() => {
   'use strict';
+  const styleNonce = document.currentScript?.nonce;
+  try {
+    const root = document.documentElement;
+    if (!root.dataset.theme && !root.classList.contains('light') && !root.classList.contains('dark')) {
+      const theme = localStorage.getItem('theme');
+      if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
+    }
+  } catch { /* System theme still works when local storage is unavailable. */ }
   const element = id => document.getElementById(id);
   const nonce = location.hash.slice(1);
   history.replaceState(null, '', '/');
@@ -119,17 +127,18 @@
     const config = await post('config');
     expiresAt(config.expiresAt);
     signup = config.signup;
-    element('origin').textContent = `API: ${config.origin}`;
+    element('origin').textContent = config.origin;
     element('consents').hidden = !signup;
     if (signup) {
-      element('title').textContent = 'Create your Geodd account.';
-      element('description').textContent = 'Register a standard account using Google. Legal consent is your choice, not a CLI flag.';
+      element('title').textContent = 'Create your account';
+      element('description').textContent = 'Register a standard Geodd account with Google.';
     }
     updateButton();
     await new Promise((resolve, reject) => {
       const script = document.createElement('script');
       const timer = setTimeout(() => reject(new Error('Google sign-in did not load. Check network access and script blockers.')), 20_000);
       script.src = 'https://accounts.google.com/gsi/client';
+      if (styleNonce) script.nonce = styleNonce;
       script.async = true;
       script.addEventListener('load', () => { clearTimeout(timer); resolve(); }, { once: true });
       script.addEventListener('error', () => { clearTimeout(timer); reject(new Error('Google sign-in could not load. Check network access and script blockers.')); }, { once: true });
@@ -137,7 +146,7 @@
     });
     if (finished) return;
     google.accounts.id.initialize({ client_id: config.clientId, callback: credential, auto_select: false, ux_mode: 'popup' });
-    google.accounts.id.renderButton(element('google-button'), { type: 'standard', theme: 'outline', size: 'large', text: signup ? 'signup_with' : 'signin_with', width: 280 });
+    google.accounts.id.renderButton(element('google-button'), { type: 'standard', theme: 'outline', size: 'medium', shape: 'rectangular', text: signup ? 'signup_with' : 'signin_with', width: '240' });
     status(signup ? 'Review the consent choices, then continue with Google.' : 'Continue with Google to sign in to an existing account.');
   }
   initialize().catch(async error => {

@@ -3,11 +3,12 @@ import type { Readable, Writable } from 'node:stream';
 import { apiOrigin, type Environment } from './config.js';
 import { asCliError, CliError, safeText } from './errors.js';
 import { HttpClient } from './http.js';
-import { modelsList, modelsPricing, modelsShow } from './models.js';
+import { modelsForKeys, modelsList, modelsPricing, modelsShow } from './models.js';
 import { outputMode, printResult, writeOutput, type CommandResult } from './output.js';
 import type { Context } from './runtime.js';
 import { authLogin, authLogout, authStatus, type LoginOptions } from './auth.js';
 import { mutateKey, type KeyOptions } from './keys.js';
+import { loadCredential } from './session.js';
 
 export interface Runtime {
   env?: Environment;
@@ -47,8 +48,16 @@ export async function runCli(args: string[], runtime: Runtime = {}): Promise<num
     };
   };
   let result: CommandResult | undefined;
-  const models = root.command('models').description('Public catalog and prices; no authentication or API key required.');
-  models.command('list').description('List all models, including unavailable models and unknown prices.').action(async () => { result = await modelsList(context().http); });
+  const models = root.command('models').description('Public inference catalog and prices; authenticated console IDs with list --for-keys.');
+  models.command('list').description('List public inference models, or console model IDs for key management.')
+    .option('--for-keys', 'read the authenticated /console/models catalog; its IDs are used by keys create/update')
+    .addHelpText('after', '\nDefault: public inference IDs and pricing, with no credentials.\n--for-keys: all console models, not scoped to any key; requires a Geodd session.\nUse the returned id with keys create/update --model. It is not an inference alias.')
+    .action(async (options: { forKeys?: boolean }) => {
+      const ctx = context();
+      result = options.forKeys
+        ? await modelsForKeys(ctx.http, (await loadCredential(ctx.origin, ctx.env)).token)
+        : await modelsList(ctx.http);
+    });
   models.command('show <model-id>').description('Show the exact case-sensitive public ID, including capabilities and limits.').action(async (id: string) => { result = await modelsShow(context().http, id); });
   models.command('pricing [model-id]').description('Original modality/unit prices and exact USD per million token prices.').action(async (id?: string) => { result = await modelsPricing(context().http, id); });
   const auth = root.command('auth').description('Google login/signup, protected session validation, and local logout.');
@@ -72,13 +81,13 @@ export async function runCli(args: string[], runtime: Runtime = {}): Promise<num
   const collect = (value: string, previous: string[] = []) => [...previous, value];
   keys.command('create').description('Create a globally named PostPaid key; stdout includes its one-time secret.')
     .requiredOption('--name <name>', 'globally unique name: 1-32 letters, numbers, or dashes')
-    .requiredOption('--model <id>', 'exact public model ID; repeat for multiple models', collect)
+    .requiredOption('--model <id>', '24-hex console model ID from models list --for-keys; repeat for multiple models', collect)
     .option('--monthly-volume <integer>', 'positive monthly token capacity (backend default: 3,000,000,000)')
     .option('--yes', 'explicitly approve the mutation, required for automation')
     .addHelpText('after', '\nBilling defaults to PostPaid. No billing-mode override is supported.\nSave the one-time secret securely from stdout; it is not stored by this CLI.')
     .action(async (options: KeyOptions) => { result = await mutateKey(context(), 'create', options); });
   keys.command('update <key-id>').description('REPLACE the complete attached model set, not add to it.')
-    .requiredOption('--model <id>', 'replacement model ID; repeat for multiple models', collect)
+    .requiredOption('--model <id>', 'replacement console model ID from models list --for-keys; repeat for multiple models', collect)
     .option('--yes', 'explicitly approve replacement, required for automation')
     .action(async (id: string, options: KeyOptions) => { result = await mutateKey(context(), 'update', options, id); });
   keys.command('rotate <key-id>').description('Invalidate the previous secret and return a new secret once on stdout.')
@@ -87,8 +96,8 @@ export async function runCli(args: string[], runtime: Runtime = {}): Promise<num
   keys.command('delete <key-id>').description('Permanently delete a key and its backend mapping.')
     .option('--yes', 'explicitly approve deletion, required for automation')
     .action(async (id: string, options: KeyOptions) => { result = await mutateKey(context(), 'delete', options, id); });
-  keys.addHelpText('after', '\nAgent example (inject GEODD_SESSION_TOKEN securely, never in argv):\n  geodd keys create --name my-agent --model openai/gpt-oss-120b --yes --json\n  geodd keys update <key-id> --model openai/gpt-oss-120b --yes\n\nReview the selected API origin. --yes approves key mutations, never signup legal terms.\nThere is no key-list command or secret-to-ID lookup. Key IDs come from saved responses.\nTimeouts can leave uncertain outcomes; never blindly retry creation or rotation.');
-  root.addHelpText('after', '\nExamples:\n  npx geodd models list --json\n  geodd models show openai/gpt-oss-120b\n  geodd models pricing openai/gpt-oss-120b\n  geodd auth login\n  geodd auth status --json\n  geodd keys create --name my-agent --model openai/gpt-oss-120b --yes --json\n\nPublic models never use credentials. Console sessions use secret_token, not Bearer.\nGoogle ID tokens and inference API keys are not console sessions.\nErrors in JSON mode are single result objects; instructions and warnings go to stderr.\nExit codes: 0 success/help, 1 service/protocol failure, 2 usage/validation,\n3 authentication/2FA, 4 confirmation rejected/required, 130 interrupted.');
+  keys.addHelpText('after', '\nAgent workflow (inject GEODD_SESSION_TOKEN securely, never in argv):\n  geodd models list --for-keys --json\n  geodd keys create --name my-agent --model <console-model-id> --yes --json\n  geodd keys update <key-id> --model <console-model-id> --yes\n\nReplace placeholders with actual IDs. Public inference aliases such as\nopenai/gpt-oss-120b are not valid console model IDs. No mapping is guessed.\nReview the selected API origin. --yes approves key mutations, never signup legal terms.\nThere is no key-list command or secret-to-ID lookup. Key IDs come from saved responses.\nTimeouts can leave uncertain outcomes; never blindly retry creation or rotation.');
+  root.addHelpText('after', '\nExamples:\n  npx geodd models list --json\n  geodd models show openai/gpt-oss-120b\n  geodd models pricing openai/gpt-oss-120b\n  geodd auth login\n  geodd auth status --json\n  geodd models list --for-keys --json\n  geodd keys create --name my-agent --model <console-model-id> --yes --json\n\nPublic models never use credentials. Console sessions use secret_token, not Bearer.\nKey commands use console model IDs, not public inference aliases.\nGoogle ID tokens and inference API keys are not console sessions.\nErrors in JSON mode are single result objects; instructions and warnings go to stderr.\nExit codes: 0 success/help, 1 service/protocol failure, 2 usage/validation,\n3 authentication/2FA, 4 confirmation rejected/required, 130 interrupted.');
   try {
     if (!args.length) { root.outputHelp(); return 0; }
     await root.parseAsync(args, { from: 'user' });

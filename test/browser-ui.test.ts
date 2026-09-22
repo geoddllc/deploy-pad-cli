@@ -29,10 +29,12 @@ test('late email success cannot replace expired browser guidance', async () => {
   const script = await readFile(new URL('../src/assets/auth.js', import.meta.url), 'utf8');
   runInNewContext(script, {
     document: {
+      documentElement: { dataset: {}, classList: { contains: () => false } },
       getElementById: element,
       createElement: () => new Element(),
       head: { append: (script: Element) => queueMicrotask(() => script.listeners.get('load')?.()) },
     },
+    localStorage: { getItem: () => null },
     location: { hash: '#' + 'a'.repeat(43) }, history: { replaceState() {} },
     Date: { now: () => 1000 },
     setTimeout(callback: () => void, delay: number) { const id = ++nextId; timers.set(id, { callback, delay }); return id; },

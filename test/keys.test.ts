@@ -12,10 +12,12 @@ import { PRODUCTION_ORIGIN } from '../src/config.js';
 const sessionToken = 'synthetic-key-test-session';
 const keySecret = 'synthetic-key-test-one-time-secret';
 const remoteSecret = 'synthetic-key-test-error-secret';
-const createArgs = ['keys', 'create', '--name', 'Agent-123', '--model', 'Vendor/Model'];
+const modelId = '0123456789abcdef01234567';
+const otherModelId = 'abcdef0123456789abcdef01';
+const createArgs = ['keys', 'create', '--name', 'Agent-123', '--model', modelId];
 const operations = [
-  { name: 'create', args: createArgs, path: '/console/api-keys/generate', method: 'POST', body: { name: 'Agent-123', models: ['Vendor/Model'] } },
-  { name: 'update', args: ['keys', 'update', 'opaque-id', '--model', 'Vendor/Model'], path: '/console/api-keys/update', method: 'POST', body: { keyId: 'opaque-id', models: ['Vendor/Model'] } },
+  { name: 'create', args: createArgs, path: '/console/api-keys/generate', method: 'POST', body: { name: 'Agent-123', models: [modelId] } },
+  { name: 'update', args: ['keys', 'update', 'opaque-id', '--model', modelId], path: '/console/api-keys/update', method: 'POST', body: { keyId: 'opaque-id', models: [modelId] } },
   { name: 'rotate', args: ['keys', 'rotate', 'opaque-id'], path: '/console/api-keys/opaque-id/regenerate', method: 'POST', body: undefined },
   { name: 'delete', args: ['keys', 'delete', 'opaque-id'], path: '/console/api-keys/opaque-id', method: 'DELETE', body: undefined },
 ] as const;
@@ -112,7 +114,7 @@ describe('key CLI routes and payloads', () => {
     const result = await invokeKeys([...createArgs, '--yes']);
     success(result, { accepted: true });
     assert.match(result.err, /Name \(globally unique\): Agent-123/);
-    assert.match(result.err, /Models: Vendor\/Model/);
+    assert.match(result.err, new RegExp(`Models: ${modelId}`));
     assert.match(result.err, /Billing: PostPaid \(backend default\)/);
     assert.match(result.err, /Monthly capacity: 3,000,000,000 \(backend default\) tokens/);
     assert.match(result.err, /one-time key secret.*never saves it/);
@@ -124,32 +126,34 @@ describe('key CLI routes and payloads', () => {
       success(result, { accepted: true });
       assert.equal(result.requests.length, 1);
       assert.deepEqual(JSON.parse(String(result.requests[0]!.body)), {
-        name: 'Agent-123', models: ['Vendor/Model'], monthlyVolume: Number(volume),
+        name: 'Agent-123', models: [modelId], monthlyVolume: Number(volume),
       });
       assert.match(result.err, new RegExp(`Monthly capacity: ${Number(volume)} tokens`));
     });
   }
 
   for (const operation of ['create', 'update'] as const) {
-    test(`${operation} deduplicates exact models without case folding or requiring discovery`, async () => {
+    test(`${operation} lowercases and deduplicates model database IDs without requiring discovery`, async () => {
       const start = operation === 'create' ? ['keys', 'create', '--name', 'Agent-123'] : ['keys', 'update', 'opaque-id'];
       const result = await invokeKeys([...start,
-        '--model', 'UnknownVendor/NotInCatalog', '--model', 'unknownvendor/notincatalog',
-        '--model', 'UnknownVendor/NotInCatalog', '--model', 'Other/Exact', '--model', 'Other/Exact', '--yes',
+        '--model', modelId.toUpperCase(), '--model', modelId,
+        '--model', modelId.toUpperCase(), '--model', otherModelId.toUpperCase(), '--model', otherModelId, '--yes',
       ]);
       success(result, { accepted: true });
       assert.equal(result.requests.length, 1);
       const body = JSON.parse(String(result.requests[0]!.body)) as { models: string[] };
-      assert.deepEqual(body.models, ['UnknownVendor/NotInCatalog', 'unknownvendor/notincatalog', 'Other/Exact']);
+      assert.deepEqual(body.models, [modelId, otherModelId]);
+      assert.ok(result.err.includes(`${modelId}, ${otherModelId}`));
+      assert.ok(!result.err.includes(modelId.toUpperCase()));
       assert.ok(!result.requests[0]!.url.includes('/inference/'));
     });
   }
 
   test('update warns that the entire model set is replaced, not appended', async () => {
-    const result = await invokeKeys(['keys', 'update', 'opaque-id', '--model', 'Replacement/Only', '--yes']);
+    const result = await invokeKeys(['keys', 'update', 'opaque-id', '--model', otherModelId, '--yes']);
     success(result, { accepted: true });
-    assert.match(result.err, /REPLACE the entire model set with: Replacement\/Only\. This is not an addition/);
-    assert.deepEqual(JSON.parse(String(result.requests[0]!.body)), { keyId: 'opaque-id', models: ['Replacement/Only'] });
+    assert.ok(result.err.includes(`REPLACE the entire model set with: ${otherModelId}. This is not an addition`));
+    assert.deepEqual(JSON.parse(String(result.requests[0]!.body)), { keyId: 'opaque-id', models: [otherModelId] });
     assert.doesNotMatch(result.err, /stdout result contains a one-time/);
   });
 
@@ -192,9 +196,9 @@ describe('opaque key IDs and local validation', () => {
 
   test('update preserves an opaque ID in JSON instead of path encoding or guessing a database format', async () => {
     const id = 'opaque/part ?#%+\\segment:\u00e9';
-    const result = await invokeKeys(['keys', 'update', id, '--model', 'Vendor/Model', '--yes']);
+    const result = await invokeKeys(['keys', 'update', id, '--model', modelId, '--yes']);
     success(result, { accepted: true });
-    assert.deepEqual(JSON.parse(String(result.requests[0]!.body)), { keyId: id, models: ['Vendor/Model'] });
+    assert.deepEqual(JSON.parse(String(result.requests[0]!.body)), { keyId: id, models: [modelId] });
     assert.equal(result.requests[0]!.url, `${PRODUCTION_ORIGIN}/console/api-keys/update`);
   });
 
@@ -207,7 +211,7 @@ describe('opaque key IDs and local validation', () => {
     test(`${operation} rejects empty, navigation, encoded-navigation, control and oversized IDs before approval`, async () => {
       let confirmations = 0;
       for (const id of invalidIds) {
-        const args = ['keys', operation, id, ...(operation === 'update' ? ['--model', 'Vendor/Model'] : [])];
+        const args = ['keys', operation, id, ...(operation === 'update' ? ['--model', modelId] : [])];
         const result = await invokeKeys(args, { interactive: true, confirm: async () => { confirmations++; return true; } });
         failure(result, 'INVALID_KEY_ID', 2);
         assert.equal(result.requests.length, 0);
@@ -219,7 +223,7 @@ describe('opaque key IDs and local validation', () => {
 
   test('create accepts names at the documented boundaries without checking global uniqueness locally', async () => {
     for (const name of ['A', '-', 'a'.repeat(32), 'AbC-123']) {
-      const result = await invokeKeys(['keys', 'create', '--name', name, '--model', 'Vendor/Model', '--yes']);
+      const result = await invokeKeys(['keys', 'create', '--name', name, '--model', modelId, '--yes']);
       success(result, { accepted: true });
       assert.equal(result.requests.length, 1);
       assert.equal((JSON.parse(String(result.requests[0]!.body)) as { name: string }).name, name);
@@ -229,7 +233,7 @@ describe('opaque key IDs and local validation', () => {
   test('create rejects invalid global names before credential lookup, approval or requests', async () => {
     let confirmations = 0;
     for (const name of ['', 'a'.repeat(33), 'has space', 'bad_name', 'bad.name', 'bad/name', 'caf\u00e9', 'bad\nname']) {
-      const result = await invokeKeys(['keys', 'create', '--name', name, '--model', 'Vendor/Model'], {
+      const result = await invokeKeys(['keys', 'create', '--name', name, '--model', modelId], {
         env: {}, interactive: true, confirm: async () => { confirmations++; return true; },
       });
       assert.match(failure(result, 'INVALID_KEY_NAME', 2), /globally unique/);
@@ -240,16 +244,44 @@ describe('opaque key IDs and local validation', () => {
   });
 
   for (const operation of ['create', 'update'] as const) {
-    test(`${operation} rejects empty or whitespace/control model IDs without a request`, async () => {
+    test(`${operation} rejects malformed model database IDs before credentials, approval or requests`, async () => {
       const start = operation === 'create' ? ['keys', 'create', '--name', 'Agent-123'] : ['keys', 'update', 'opaque-id'];
-      for (const model of ['', ' ', ' Vendor/Model', 'Vendor/Model ', 'Vendor /Model', 'Vendor/\nModel', 'Vendor/\u0000Model', 'Vendor/\u009bModel']) {
-        const result = await invokeKeys([...start, '--model', 'Valid/First', '--model', model, '--yes'], { env: {} });
-        failure(result, 'INVALID_MODELS', 2);
+      let confirmations = 0;
+      for (const model of [
+        '', ' ', 'a'.repeat(23), 'a'.repeat(25), 'g'.repeat(24), 'abcdefghijkl',
+        ` ${modelId}`, `${modelId} `, `${modelId}\n`, `${modelId}\r\n`,
+        `${modelId.slice(0, 12)} ${modelId.slice(13)}`, `${modelId.slice(0, 23)}\u0000`,
+        `${modelId.slice(0, 23)}\u009b`, `${modelId.slice(0, 23)}\u202e`,
+        'Vendor/Model', `ObjectId("${modelId}")`, `0x${modelId}`, '\uff41'.repeat(24),
+      ]) {
+        const result = await invokeKeys([...start, '--model', modelId, '--model', model], {
+          env: {}, interactive: true, confirm: async () => { confirmations++; return true; },
+        });
+        const message = failure(result, 'INVALID_MODELS', 2);
+        assert.match(message, /24-character hexadecimal model database ID/);
+        assert.match(message, /geodd models list --for-keys/);
+        assert.match(message, /public inference model IDs are not accepted/);
         assert.equal(result.requests.length, 0);
         assert.equal(result.err, '');
       }
+      assert.equal(confirmations, 0);
     });
   }
+
+  test('the reported openai/gpt-oss-120b create command fails locally before credentials, confirmation or fetch', async () => {
+    let confirmations = 0;
+    for (const flags of [[], ['--yes', '--json']]) {
+      const result = await invokeKeys(['keys', 'create', '--name', 'Agent-123', '--model', 'openai/gpt-oss-120b', ...flags], {
+        env: {}, interactive: true, confirm: async () => { confirmations++; return true; },
+      });
+      const message = failure(result, 'INVALID_MODELS', 2);
+      assert.match(message, /geodd models list --for-keys/);
+      assert.match(message, /public inference model IDs are not accepted/);
+      assert.equal(result.requests.length, 0);
+      assert.equal(result.err, '');
+    }
+    assert.equal(confirmations, 0);
+  });
 
   test('rejects zero, nondecimal, fractional, negative, whitespace and unsafe monthly volumes locally', async () => {
     for (const volume of ['', '0', '-1', '+1', '1.5', '1e6', 'Infinity', 'NaN', '0x10', ' 1', '1 ', '9007199254740992']) {
@@ -262,13 +294,13 @@ describe('opaque key IDs and local validation', () => {
 
   test('CLI registrations require documented arguments and reject unsupported options or commands', async () => {
     const invalid = [
-      ['keys', 'create', '--model', 'Vendor/Model', '--yes'],
+      ['keys', 'create', '--model', modelId, '--yes'],
       ['keys', 'create', '--name', 'Agent-123', '--yes'],
-      ['keys', 'update', '--model', 'Vendor/Model', '--yes'],
+      ['keys', 'update', '--model', modelId, '--yes'],
       ['keys', 'update', 'opaque-id', '--yes'],
       ['keys', 'rotate', '--yes'], ['keys', 'delete', '--yes'], ['keys', 'list'],
       [...createArgs, '--billing', 'PrePaid', '--yes'],
-      ['keys', 'update', 'opaque-id', '--model', 'Vendor/Model', '--monthly-volume', '1', '--yes'],
+      ['keys', 'update', 'opaque-id', '--model', modelId, '--monthly-volume', '1', '--yes'],
       ['keys', 'rotate', 'opaque-id', '--token', sessionToken, '--yes'],
       ['keys', 'delete', 'opaque-id', 'unexpected', '--yes'],
     ];
@@ -457,7 +489,8 @@ describe('key results, failures and mutation uncertainty', () => {
   }
 
   for (const [status, code, exitCode] of [
-    [401, 'AUTH_INVALID', 3], [403, 'AUTH_FORBIDDEN', 3], [409, 'CONFLICT', 1],
+    [400, 'API_VALIDATION', 2], [401, 'AUTH_INVALID', 3], [403, 'AUTH_FORBIDDEN', 3],
+    [409, 'CONFLICT', 1], [422, 'API_VALIDATION', 2],
     [429, 'THROTTLED', 1], [503, 'SERVICE_UNAVAILABLE', 1],
   ] as const) {
     test(`reports ${status} safely without retrying, credential fallback or browser login`, async () => {
@@ -473,6 +506,19 @@ describe('key results, failures and mutation uncertainty', () => {
       if (status === 403) assert.match(message, /2FA.*ownership/);
     });
   }
+
+  test('model existence remains a backend check without a catalog lookup or retry', async () => {
+    const unknownModelId = '0'.repeat(24);
+    for (const operation of ['create', 'update'] as const) {
+      const start = operation === 'create' ? ['keys', 'create', '--name', 'Agent-123'] : ['keys', 'update', 'opaque-id'];
+      const result = await invokeKeys([...start, '--model', unknownModelId, '--yes'], {
+        fetch: async () => Response.json({ error: 'One or more model IDs do not exist', token: sessionToken, input: remoteSecret }, { status: 400 }),
+      });
+      failure(result, 'API_VALIDATION', 2, 400);
+      assert.equal(result.requests.length, 1);
+      assert.deepEqual((JSON.parse(String(result.requests[0]!.body)) as { models: string[] }).models, [unknownModelId]);
+    }
+  });
 
   test('rejects HTTP 200 logical failures without exposing their secret fields or retrying', async () => {
     const result = await invokeKeys(['keys', 'rotate', 'opaque-id', '--yes'], {

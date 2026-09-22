@@ -28,10 +28,10 @@ function keyIdentifier(id: string | undefined): string {
 }
 
 function modelIdentifiers(values: string[] | undefined): string[] {
-  if (!values?.length || values.some(value => !value.trim() || value !== value.trim() || /[\u0000-\u0020\u007f-\u009f]/.test(value))) {
-    throw new CliError('INVALID_MODELS', 'Provide at least one nonempty exact public model ID with --model. IDs are case-sensitive; repeat --model for each ID.', 2);
+  if (!values?.length || values.some(value => value.length !== 24 || !/^[a-f0-9]{24}$/i.test(value))) {
+    throw new CliError('INVALID_MODELS', 'Provide at least one 24-character hexadecimal model database ID with --model. Run geodd models list --for-keys to discover IDs; public inference model IDs are not accepted. Repeat --model for each ID.', 2);
   }
-  return [...new Set(values)];
+  return [...new Set(values.map(value => value.toLowerCase()))];
 }
 
 async function approve(ctx: Context, summary: string, yes?: boolean): Promise<void> {
@@ -86,7 +86,7 @@ export async function mutateKey(ctx: Context, operation: Operation, options: Key
   await approve(ctx, summary, options.yes);
   if (operation === 'create' || operation === 'rotate') await ctx.warn('The successful stdout result contains a one-time key secret. Store it securely; the CLI never saves it.');
   const data = await ctx.http.request(path, {
-    method: operation === 'delete' ? 'DELETE' : 'POST', token: credential.token, context: 'console', mutation: true,
+    method: operation === 'delete' ? 'DELETE' : 'POST', token: credential.token, context: 'keys', mutation: true,
     allowEmpty: operation === 'update' || operation === 'delete',
     ...(body !== undefined ? { body } : {}),
   });
