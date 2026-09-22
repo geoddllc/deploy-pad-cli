@@ -1,0 +1,27 @@
+:root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #182d2b; background: #f0f3ee; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 6vh 20px; }
+main { max-width: 560px; margin: auto; background: #fff; padding: 36px; border: 1px solid #cbd5ce; border-top: 5px solid #256b55; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 52px; }
+.brand { font-weight: 750; font-size: 28px; letter-spacing: -1.5px; }
+.tag, .eyebrow { font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: 1.4px; }
+.tag { border: 1px solid #cbd5ce; padding: 6px 8px; }
+.eyebrow { color: #256b55; }
+h1 { font-size: clamp(28px, 5vw, 36px); line-height: 1.15; letter-spacing: -1px; margin: 16px 0; }
+p, label { font-size: 15px; line-height: 1.6; }
+.origin { font: 12px/1.6 ui-monospace, monospace; overflow-wrap: anywhere; padding: 10px 12px; background: #f0f3ee; margin: 24px 0; }
+fieldset { border: 0; padding: 0; margin: 0 0 24px; }
+legend { font-weight: 650; margin-bottom: 10px; }
+fieldset label { display: flex; align-items: flex-start; gap: 10px; margin: 14px 0; }
+input[type="checkbox"] { flex-shrink: 0; margin-top: 6px; accent-color: #256b55; width: 16px; height: 16px; }
+a { color: #1b624a; text-underline-offset: 3px; }
+.hint, footer { font-size: 12px; color: #52615b; }
+input[type="text"] { width: 100%; padding: 12px; border: 1px solid #74877c; font: 24px ui-monospace, monospace; letter-spacing: 8px; margin: 8px 0 12px; border-radius: 3px; }
+button { padding: 12px 18px; background: #256b55; color: #fff; border: 1px solid #256b55; border-radius: 3px; font: inherit; cursor: pointer; }
+button.secondary { background: transparent; color: #256b55; margin-top: 16px; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+:focus-visible { outline: 3px solid #e09b32; outline-offset: 3px; }
+#status { margin: 28px 0 8px; overflow-wrap: anywhere; }
+footer { border-top: 1px solid #dae1db; padding-top: 18px; margin-top: 32px; }
+[hidden] { display: none !important; }
+@media (max-width: 480px) { body { padding: 16px 10px; } main { padding: 24px 16px; } header { margin-bottom: 32px; } }

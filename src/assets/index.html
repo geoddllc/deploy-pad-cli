@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Geodd CLI Authentication</title>
+  <link rel="stylesheet" href="/auth.css">
+  <script src="/auth.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><span class="brand">geodd</span><span class="tag">COMMAND LINE</span></header>
+    <p class="eyebrow">LOCAL AUTHENTICATION</p>
+    <h1 id="title">Connect your account.</h1>
+    <p id="description">Authenticate this CLI with Google. Your session stays on this computer.</p>
+    <p class="origin" id="origin"></p>
+    <section id="google-panel" aria-label="Google authentication">
+      <fieldset id="consents" hidden>
+        <legend>Standard account signup</legend>
+        <label><input type="checkbox" id="terms"> <span>I agree to the <a href="https://geodd.io/legal/terms-of-service" target="_blank" rel="noopener noreferrer">Terms of Service</a>.</span></label>
+        <label><input type="checkbox" id="privacy"> <span>I acknowledge the <a href="https://geodd.io/legal/privacy-policy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</span></label>
+        <label><input type="checkbox" id="marketing"> <span>Send me product news and marketing emails (optional).</span></label>
+        <p class="hint">Agree to terms and acknowledge privacy before continuing with Google.</p>
+      </fieldset>
+      <div id="google-button"></div>
+    </section>
+    <section id="two-factor" hidden aria-label="Two-factor verification">
+      <p>Enter the six-digit code from your authenticator, or explicitly request an email code.</p>
+      <form id="code-form">
+        <label for="code">Verification code</label>
+        <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required placeholder="000000">
+        <button id="verify" type="submit">Verify account</button>
+      </form>
+      <button id="email" class="secondary" type="button">Send an email code</button>
+    </section>
+    <p id="status" role="status" aria-live="polite">Preparing secure sign-in...</p>
+    <button id="cancel" class="secondary" type="button">Cancel authentication</button>
+    <footer>Only the CLI receives your Geodd session. Return to your terminal when finished.</footer>
+  </main>
+</body>
+</html>

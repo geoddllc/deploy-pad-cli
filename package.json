@@ -1,0 +1,21 @@
+{
+  "name": "geodd",
+  "version": "0.1.0",
+  "description": "Geodd command-line tools for people and AI agents",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "bin": { "geodd": "dist/cli.js" },
+  "files": ["dist/**/*.js", "dist/assets/*"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "tsc -p tsconfig.test.json && node scripts/build.mjs --test && node --test .test-dist/test/*.test.js",
+    "check": "npm run typecheck && npm test && npm run build",
+    "pack:check": "npm run build && npm pack --dry-run",
+    "prepack": "npm run build"
+  },
+  "dependencies": { "commander": "^14.0.1", "open": "^10.2.0" },
+  "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.9.3" }
+}
